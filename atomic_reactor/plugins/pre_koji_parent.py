@@ -195,6 +195,7 @@ class KojiParentPlugin(PreBuildPlugin):
 
         insecure = self._source_registry.get('insecure', False)
         dockercfg_path = self._source_registry.get('secret')
+        self.log.debug('Using source registry: %s', self._source_registry)
         manifest_list_response = get_manifest_list(image, image.registry, insecure=insecure,
                                                    dockercfg_path=dockercfg_path)
         if not manifest_list_response:
