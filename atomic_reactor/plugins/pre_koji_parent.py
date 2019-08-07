@@ -214,7 +214,7 @@ class KojiParentPlugin(PreBuildPlugin):
 
         archives = self.koji_session.listArchives(build_id)
         koji_archives_data = {}
-        for archive in archives:
+        for archive in (a for a in archives if a['btype'] == 'image'):
             arch = archive['extra']['docker']['config']['architecture']
             v2_digest = archive['extra']['docker']['digests'][v2_type]
             koji_archives_data[arch] = v2_digest
