@@ -10,6 +10,7 @@ from __future__ import unicode_literals, absolute_import, division
 
 from collections import namedtuple
 import os
+import subprocess
 from tempfile import NamedTemporaryFile
 import copy
 
@@ -26,7 +27,7 @@ from atomic_reactor.util import (get_version_of_tools, get_checksums,
                                  get_build_json, get_docker_architecture,
                                  get_image_upload_filename,
                                  get_manifest_media_type, ImageName, is_scratch_build)
-from atomic_reactor.rpm_util import get_rpm_list, parse_rpm_output
+from atomic_reactor.rpm_util import parse_rpm_output, rpm_qf_args
 from osbs.exceptions import OsbsException
 
 # An output file and its metadata
@@ -153,9 +154,28 @@ class KojiUploadPlugin(PostBuildPlugin):
             'SIGGPG:pgpsig',
         ]
 
-        output = get_rpm_list(tags)
+        cmd = "/bin/rpm " + rpm_qf_args(tags)
+        try:
+            # py3
+            (status, output) = subprocess.getstatusoutput(cmd)
+        except AttributeError:
+            # py2
+            with open('/dev/null', 'r+') as devnull:
+                p = subprocess.Popen(cmd,
+                                     shell=True,
+                                     stdin=devnull,
+                                     stdout=subprocess.PIPE,
+                                     stderr=devnull)
 
-        return parse_rpm_output(output, tags)
+                (stdout, stderr) = p.communicate()
+                status = p.wait()
+                output = stdout.decode()
+
+        if status != 0:
+            self.log.debug("%s: stderr output: %s", cmd, stderr)
+            raise RuntimeError("%s: exit code %s" % (cmd, status))
+
+        return parse_rpm_output(output.splitlines(), tags)
 
     def get_output_metadata(self, path, filename):
         """
