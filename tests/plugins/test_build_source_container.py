@@ -9,12 +9,17 @@ from __future__ import unicode_literals, absolute_import
 
 import os
 import subprocess
+import tempfile
 
 from flexmock import flexmock
+import pytest
+import json
+import tarfile
 
 from atomic_reactor.inner import DockerBuildWorkflow
+from atomic_reactor.constants import EXPORTED_SQUASHED_IMAGE_NAME
 from atomic_reactor.core import DockerTasker
-from atomic_reactor.plugin import BuildStepPluginsRunner
+from atomic_reactor.plugin import BuildStepPluginsRunner, PluginFailedException
 from atomic_reactor.plugins.build_source_container import SourceContainerPlugin
 from atomic_reactor.plugins.pre_reactor_config import (
     ReactorConfigPlugin,
@@ -64,11 +69,11 @@ def mock_workflow(tmpdir):
     return workflow
 
 
-def test_running_build(tmpdir, caplog):
+@pytest.mark.parametrize('export_failed', (True, False))
+def test_running_build(tmpdir, caplog, export_failed):
     """
     Test if proper result is returned and if plugin works
     """
-    flexmock(subprocess).should_receive('check_output').and_return('stub stdout')
     workflow = mock_workflow(tmpdir)
     mocked_tasker = flexmock(workflow.builder.tasker)
     mocked_tasker.should_receive('wait').and_return(0)
@@ -80,10 +85,74 @@ def test_running_build(tmpdir, caplog):
             'args': {},
         }]
     )
-    build_result = runner.run()
-    assert not build_result.is_failed()
-    assert build_result.oci_image_path
-    assert 'stub stdout' in caplog.text
+
+    temp_source_dir = os.path.join(str(tmpdir), 'source_dir')
+    temp_image_output_dir = os.path.join(str(tmpdir), 'image_output_dir')
+    temp_image_export_dir = os.path.join(str(tmpdir), 'image_export_dir')
+    tempfile_chain = flexmock(tempfile).should_receive("mkdtemp").and_return(temp_source_dir)
+    tempfile_chain.and_return(temp_image_output_dir)
+    tempfile_chain.and_return(temp_image_export_dir)
+    os.mkdir(temp_source_dir)
+    os.mkdir(temp_image_export_dir)
+    os.makedirs(os.path.join(temp_image_output_dir, 'blobs', 'sha256'))
+
+    def check_check_output(args, **kwargs):
+        if args[0] == 'skopeo':
+            assert args[0] == 'skopeo'
+            assert args[1] == 'copy'
+            assert args[2] == 'oci:%s' % temp_image_output_dir
+            assert args[3] == 'oci-archive:%s' % os.path.join(temp_image_export_dir,
+                                                              EXPORTED_SQUASHED_IMAGE_NAME)
+
+            if export_failed:
+                raise subprocess.CalledProcessError(returncode=1, cmd=args, output="Failed")
+
+            return ''
+        else:
+            assert args[0] == 'bsi'
+            assert args[1] == '-d'
+            assert args[2] == 'sourcedriver_rpm_dir'
+            assert args[3] == '-s'
+            assert args[4] == temp_source_dir
+            assert args[5] == '-o'
+            assert args[6] == temp_image_output_dir
+            return 'stub stdout'
+
+    (flexmock(subprocess)
+     .should_receive("check_output")
+     .times(2)
+     .replace_with(check_check_output))
+
+    blob_sha = "f568c411849e21aa3917973f1c5b120f6b52fe69b1944dfb977bc11bed6fbb6d"
+    index_json = {"schemaVersion": 2,
+                  "manifests":
+                      [{"mediaType": "application/vnd.oci.image.manifest.v1+json",
+                        "digest": "sha256:%s" % blob_sha,
+                        "size": 645,
+                        "annotations": {"org.opencontainers.image.ref.name": "latest-source"},
+                        "platform": {"architecture": "amd64", "os": "linux"}}]}
+    blob_json = {"schemaVersion": 2, "layers": []}
+
+    with open(os.path.join(temp_image_output_dir, 'index.json'), 'w') as fp:
+        fp.write(json.dumps(index_json))
+    with open(os.path.join(temp_image_output_dir, 'blobs', 'sha256', blob_sha), 'w') as fp:
+        fp.write(json.dumps(blob_json))
+
+    if not export_failed:
+        export_tar = os.path.join(temp_image_export_dir, EXPORTED_SQUASHED_IMAGE_NAME)
+        with open(export_tar, "wb") as f:
+            with tarfile.TarFile(mode="w", fileobj=f) as tf:
+                for f in os.listdir(temp_image_output_dir):
+                    tf.add(os.path.join(temp_image_output_dir, f), f)
+
+    if export_failed:
+        with pytest.raises(PluginFailedException):
+            runner.run()
+    else:
+        build_result = runner.run()
+        assert not build_result.is_failed()
+        assert build_result.oci_image_path
+        assert 'stub stdout' in caplog.text
 
 
 def test_failed_build(tmpdir, caplog):
