@@ -46,8 +46,9 @@ class FetchSourcesPlugin(PreBuildPlugin):
         type_errors = []
         if koji_build_id is not None and not isinstance(koji_build_id, int):
             type_errors.append('koji_build_id must be an int. Got {}'.format(type(koji_build_id)))
-        if koji_build_nvr is not None and not isinstance(koji_build_nvr, str):
-            type_errors.append('koji_build_nvr must be a str. Got {}'.format(type(koji_build_nvr)))
+        if koji_build_nvr is not None and not isinstance(koji_build_nvr, (str, unicode)):
+            type_errors.append('koji_build_nvr must be a str. Got {}'
+                               .format(type(koji_build_nvr)))
         if type_errors:
             raise TypeError(type_errors)
 
