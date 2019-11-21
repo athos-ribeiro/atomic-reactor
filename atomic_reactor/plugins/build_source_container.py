@@ -80,7 +80,7 @@ class SourceContainerPlugin(BuildStepPlugin):
 
         self.log.debug("Build log:\n%s", "\n".join(output))
 
-        self.tasker.cleanup_containers(container_id)
+        # self.tasker.cleanup_containers(container_id)
 
         if status_code != 0:
             reason = (
