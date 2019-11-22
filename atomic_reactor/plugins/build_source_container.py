@@ -7,6 +7,7 @@ of the BSD license. See the LICENSE file for details.
 """
 from __future__ import print_function, unicode_literals, absolute_import
 
+import subprocess
 import tempfile
 
 from atomic_reactor.build import BuildResult, ImageName
@@ -53,41 +54,29 @@ class SourceContainerPlugin(BuildStepPlugin):
         srpms_path = '/data/'
         output_path = '/output/'
 
-        volume_bindings = {
-            source_data_dir: {
-                'bind': srpms_path,
-                'mode': 'ro,Z',
-            },
-            image_output_dir: {
-                'bind': output_path,
-                'mode': 'rw,Z',
-            }
-        }
+        # "podman run -it -v $(pwd)/output/:/output/ -v $(pwd)/SRCRPMS/:/data/ -u $(id -u) quay.io/ctrs/bsi -s /data/ -o /output/"
+        # "podman run -it -v {image_output_dir}:{output_path} -v {source_data_dir}:{srpms_path} -u $(id -u) {image} -s {srpms_path} -o {output_path}"
+        cmd = ['podman',
+               '--storage-driver=vfs',
+               'run',
+               '-it',
+               '-v',
+               '{}:{}'.format(image_output_dir, output_path),
+               '-v',
+               '{}:{}'.format(source_data_dir, srpms_path),
+               '{}'.format(image),
+               '-s',
+               '{}'.format(srpms_path),
+               '-o',
+               '{}'.format(output_path)]
 
-        pulled_img = self.tasker.pull_image(image)
-
-        command = '-d sourcedriver_rpm_dir -s {srpms_path} -o {output_path}'.format(
-            srpms_path=srpms_path,
-            output_path=output_path,
-        )
-        container_id = self.tasker.run(
-            pulled_img,
-            volume_bindings=volume_bindings,
-            command=command
-        )
-        status_code = self.tasker.wait(container_id)
-        output = self.tasker.logs(container_id, stream=False)
+        try:
+            output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            self.log.error("build failed with output:\n%s", e.output)
+            return BuildResult(logs=e.output, fail_reason='source container build failed')
 
         self.log.debug("Build log:\n%s", "\n".join(output))
-
-        # self.tasker.cleanup_containers(container_id)
-
-        if status_code != 0:
-            reason = (
-                "Source container build failed with error code {}. "
-                "See build logs for details".format(status_code)
-            )
-            return BuildResult(logs=output, fail_reason=reason)
 
         return BuildResult(
             logs=output,
