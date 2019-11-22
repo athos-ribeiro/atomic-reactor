@@ -54,21 +54,11 @@ class SourceContainerPlugin(BuildStepPlugin):
         srpms_path = '/data/'
         output_path = '/output/'
 
-        # "podman run -it -v $(pwd)/output/:/output/ -v $(pwd)/SRCRPMS/:/data/ -u $(id -u) quay.io/ctrs/bsi -s /data/ -o /output/"
-        # "podman run -it -v {image_output_dir}:{output_path} -v {source_data_dir}:{srpms_path} -u $(id -u) {image} -s {srpms_path} -o {output_path}"
-        cmd = ['podman',
-               '--storage-driver=vfs',
-               'run',
-               '-it',
-               '-v',
-               '{}:{}'.format(image_output_dir, output_path),
-               '-v',
-               '{}:{}'.format(source_data_dir, srpms_path),
-               '{}'.format(image),
+        cmd = ['bsi',
                '-s',
-               '{}'.format(srpms_path),
+               '{}'.format(source_data_dir),
                '-o',
-               '{}'.format(output_path)]
+               '{}'.format(image_output_dir)]
 
         try:
             output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
@@ -76,7 +66,7 @@ class SourceContainerPlugin(BuildStepPlugin):
             self.log.error("build failed with output:\n%s", e.output)
             return BuildResult(logs=e.output, fail_reason='source container build failed')
 
-        self.log.debug("Build log:\n%s", "\n".join(output))
+        self.log.debug("Build log:\n%s\n", output)
 
         return BuildResult(
             logs=output,
