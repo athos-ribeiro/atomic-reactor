@@ -402,7 +402,7 @@ def get_output(workflow, buildroot_id, pullspec, platform, source_build=False, l
         image_id = image_inspect['Id']
 
         history = workflow.builder.tasker.get_image_history(image_id)
-        diff_ids = image_inspect[INSPECT_ROOTFS][INSPECT_ROOTFS_LAYERS]
+        diff_ids = image_inspect[INSPECT_ROOTFS].get(INSPECT_ROOTFS_LAYERS, [])
 
         # diff_ids is ordered oldest first
         # history is ordered newest first
