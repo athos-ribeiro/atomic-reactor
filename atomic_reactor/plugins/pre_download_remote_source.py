@@ -58,9 +58,7 @@ class DownloadRemoteSourcePlugin(PreBuildPlugin):
 
         self.log.info('Checking for additional configurations at %s', url)
         session = get_retrying_requests_session()
-        session.verify = insecure
-
-        response = session.get(url)
+        response = session.get(url, verify=insecure)
         response_json = response.json()
         response.raise_for_status()
         return response_json
